@@ -58,31 +58,33 @@ t_sim=0:0.01:(size(u_ol,1)-1)*0.01;
 %%
 
 %Initialization
-Aineq=[];
-Bineq=[];
 dt = 0.1;
-t=0:dt:1175*dt;%117.5;
+t=0:dt:200*dt;%117.5;
 
 x_ref=interp1(t_sim,x_ol,t);
 u_ref=interp1(t_sim,u_ol,t);
 
-x = [287 5 -176 0 2 0]';
-e = [287 5 -176 0 2 0]'-x_ref(1,:)';
-u = [0 0];%[-0.02 5000];
+x = [289 5 -175 0 2 0]';%[287 5 -176 0 2 0]';
+e = x-x_ref(1,:)';
+u = u_ref(1,:);%[-0.02 5000];
 
+%Normal parameters
+n = 6;                    %Number of States
+m = 2;                    %Number of Inputs
+horizon=5;
+zsize = (horizon+1)*n+horizon*m; 
+xsize = (horizon+1)*n; 
+Q = diag(repmat((ones(1,6)./[100 10 100 10 0.1 0.01]).^2,1,horizon+1));%eye(xsize);%
+R = zeros(zsize-xsize);%diag(repmat([1 1]./[0.01 1000],1,horizon));%
+H = blkdiag(Q, R);
+f = zeros(zsize, 1); 
+Ndec=n * (horizon+1) + m *horizon ;
 
 %MPC at every time step k
 for k = 1:length(t)-1
     disp(['At ' num2str(t(k)) ' s:'])
-    if length(t)-k>5
-        horizon = 5 ; 
-    else
-        horizon = length(t)-k; 
-    end
-    
-    
-    
-    
+     if ~(length(t)-k>5)
+    horizon = length(t)-k; 
     zsize = (horizon+1)*6+horizon*2; 
     xsize = (horizon+1)*6; 
 
@@ -90,20 +92,17 @@ for k = 1:length(t)-1
     R = zeros(zsize-xsize); 
     H = blkdiag(Q, R);
     f = zeros(zsize, 1); 
-
+    Ndec=n * (horizon+1) + m *horizon ;
+    end
+ 
     %Evaluate Al and Bl at current state
-    [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
+    [Al,Bl]=linearized_mats(x(:,k)',u(k,:));
 
     %Discretize (Euler)
     A = eye(size(Al))+dt*Al;
     B = dt*Bl;
 
 %% Generate equality constraints
-n = length(x(:,end));                    %Number of States
-m = length(u(end,:));                    %Number of Inputs
-
-xsize = (horizon+1)*n;              %Number of State Decision Variables
-zsize = (horizon+1)*n+horizon*m;    %Total Number of Decision Variables
 
 Aeq = zeros(xsize, zsize);          %Allocate Aeq
 Aeq(1:n, 1:n) = eye(n);             %Initial Condition LHS
@@ -122,27 +121,39 @@ for i = n+1:n:xsize
     
 end
 
+%% Inequality constraints
 
-    Aineq=[];
-    bineq = [];
+Aineq = zeros( 2*m*horizon, Ndec);
+bineq = zeros( 2*m*horizon, 1 );
+Aineq(1:m*horizon,n * (horizon+1)+[1:m*horizon])=eye(m*horizon);
+bineq([1:2:m*horizon],1)=0.5-u_ref(k:k+horizon-1,1);
+bineq([2:2:m*horizon],1)=5000-u_ref(k:k+horizon-1,2);
+
+Aineq(m*horizon+[1:m*horizon],n * (horizon+1)+[1:m*horizon])=-eye(m*horizon);
+bineq(m*horizon+[1:2:m*horizon],1)=0.5+u_ref(k:k+horizon-1,1);
+bineq(m*horizon+[2:2:m*horizon],1)=10000+u_ref(k:k+horizon-1,2);
+%%    
     z = quadprog(H, f, Aineq, bineq, Aeq, beq); 
     u_k = z([xsize+1 xsize+2],1);
 
     u(k+1,:) = u_k'+u_ref(k,:); %augmenting with nominal input
     
 %     Simulating using the total input
-    if k==1
-        [L]=forwardIntegrate_vardt([-0.02 5000;u(k,:)],x(:,k)',dt);
-    else 
-        [L]=forwardIntegrate_vardt([u(k:k+1,:)],x(:,k)',dt);
-    end
-
+      [L]=forwardIntegrate_vardt([u(k:k+1,:)],x(:,k)',dt);
+  
     x=[x L(2,:)']; %updating states
     e= [e L(2,:)'-x_ref(k,:)'];
 end
 %% Re-interpolate final input vector and re-calculate trajectory with new input
 u_final=interp1(t,u,t_sim);
-x_final = forwardIntegrateControlInput(u_final,x0);
+x_final = forwardIntegrateControlInput(u_final,x(:,1));
 figure;
-plot(bl_x,bl_y,br_x,br_y,cline_x,cline_y,'--',x_final(:,1),x_final(:,3),'k');
-save('MPC_zero_error_start_foh.mat')
+plot(bl_x,bl_y,br_x,br_y,'b');%cline_x,cline_y,'--',
+hold on
+plot(x_ref(:,1),x_ref(:,3),'-.m');
+plot(x_final(:,1),x_final(:,3),'--k');
+
+figure;
+plot(t,e)
+legend('e_x','e_u','e_y','e_v','e_{\psi}','e_{r}')
+save('MPC_zero_error_start_euler.mat')
