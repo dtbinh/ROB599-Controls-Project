@@ -256,13 +256,13 @@ for k = 1:length(t)-1
                         %Extra constraint equations for going left
                         for lll=1:horizon
                             Aex(lll, lll*n+[1 3])=[m_cons -1]*R_obs;
-                            bex=-c_cons-[m_cons -1]*R_obs*[x_ref(k+lll,1);x_ref(k+lll,3)];
+                            bex(lll,1)=-c_cons-[m_cons -1]*R_obs*[x_ref(k+lll,1);x_ref(k+lll,3)];
                         end
                     else
                         %Extra constraint equations for going right
                         for lll=1:horizon
                             Aex(lll, lll*n+[1 3])=-[m_cons -1]*R_obs;
-                            bex=c_cons+[m_cons -1]*R_obs*[x_ref(k+lll,1); x_ref(k+lll,3)];
+                            bex(lll,1)=c_cons+[m_cons -1]*R_obs*[x_ref(k+lll,1); x_ref(k+lll,3)];
                         end
                     end
                 Aineq=[Aineq;Aex];
