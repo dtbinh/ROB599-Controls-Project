@@ -51,7 +51,7 @@ u_ol = [U1; U2; U3; U4; U5; U6; U7; U8; U9; U10;
     U21;U22;U23;U24;U25;U26;U27;U28;U29     ];
 
 %% Run open loop to get equilibrium trajectory
-x0 = [287.1 5 -176 0 2 0]';
+x0 = [287 5 -176 0 2 0]';
 x_ol = forwardIntegrateControlInput(u_ol,x0);
 t_sim=0:0.01:(size(u_ol,1)-1)*0.01;
 
@@ -85,7 +85,7 @@ t_sim=0:0.01:(size(u_ol,1)-1)*0.01;
 detect_dist=sqrt(2)*15;%Detection distance of obstacle in m
 lim_pdist=1.5;%Limiting distance on side of obstacleto considet going to far side
 dt = 0.1;
-t=0:dt:100*dt;%117.5;
+t=0:dt:500*dt;%117.5;
 
 x_ref=interp1(t_sim,x_ol,t);
 u_ref=interp1(t_sim,u_ol,t);
@@ -94,7 +94,7 @@ figure(h1);
 hold on
 plot(x_ref(:,1),x_ref(:,3),'-.m');
 
-x = [289 5 -175 0 2 0]';%[287 5 -176 0 2 0]';
+x = x_ref(1,:)';% [289 5 -175 0 2 0]';%[287 5 -176 0 2 0]';
 e = x-x_ref(1,:)';
 u = u_ref(1,:);%[-0.02 5000];
 
@@ -109,7 +109,7 @@ R = zeros(zsize-xsize);%diag(repmat([1 1]./[0.01 1000],1,horizon));%
 H = blkdiag(Q, R);
 f = zeros(zsize, 1);
 Ndec=n * (horizon+1) + m *horizon ;
-options=optimoptions(@fmincon,'Algorithm','sqp');%,'Display','Iter');%,'CheckGradients',false,'GradObj','on','ConstraintTolerance',1e-6,'MaxIter',10000,'MaxFunctionEvaluations',50000,'Display','Iter');%,[repmat([100;5;100;5;1;0.1],(PredHorizon+1),1) ; repmat([0.1;1000],PredHorizon,1)]'TypicalX',sqrt(1./diag(Q))
+options=optimoptions(@fmincon,'Algorithm','sqp','SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true);%'CheckGradients',true);%,'Display','Iter');%,'CheckGradients',false,'GradObj','on','ConstraintTolerance',1e-6,'MaxIter',10000,'MaxFunctionEvaluations',50000,'Display','Iter');%,[repmat([100;5;100;5;1;0.1],(PredHorizon+1),1) ; repmat([0.1;1000],PredHorizon,1)]'TypicalX',sqrt(1./diag(Q))
 
 %MPC at every time step k
 for k = 1:length(t)-1
@@ -128,7 +128,7 @@ for k = 1:length(t)-1
     end
     
     %Evaluate Al and Bl at current state
-    [Al,Bl]=linearized_mats(x(:,k)',u(k,:));
+    [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
     
     %Discretize (Euler)
     A = eye(size(Al))+dt*Al;
@@ -153,8 +153,7 @@ for k = 1:length(t)-1
         
     end
     
-    %     z = quadprog(H, f, Aineq, bineq, Aeq, beq);
-    fun=@(var)(0.5*var'*H*var+f'*var);
+    fun=@(var)error_cost(var,H,f);
     nlcons=@(var)track_nlcons_err(var,reshape(x_ref(k:k+horizon,:)',n*(horizon+1),1),TestTrack,Ndec,horizon,n,m);%Nonlinear track constraints
     %Simulate open loop for initial guess
     z0=zeros(Ndec,1);
@@ -207,7 +206,7 @@ for k = 1:length(t)-1
                 pdist3=perp_dist(obs_x_mat(3,ind_det(pp)),obs_y_mat(3,ind_det(pp)),TestTrack.br);
                 pdistr=min(pdist2,pdist3);
                 %Which side of obstacle is closest to car
-                [mind2,indmin]=min((xvl(1)- obs_x_mat(1:2,ind_det(pp))).^2+(x(3,k)- obs_y_mat(1:2,ind_det(pp))).^2)
+                [mind2,indmin]=min((xvl(1)- obs_x_mat(1:2,ind_det(pp))).^2+(x(3,k)- obs_y_mat(1:2,ind_det(pp))).^2);
                 
                 if (indmin==1 && pdistl>lim_pdist) %left side is closer and there is space to go on that side
                     goleft=1;
@@ -250,20 +249,24 @@ for k = 1:length(t)-1
                 end
                 
                 if (flag_cons==1)
-                     Aex=zeros(horizon,Ndec);
-                     bex=zeros(horizon,1);
+                     Aex=zeros(1,Ndec);%zeros(horizon,Ndec);
+                     bex=zeros(1,1);
                     if (goleft==1)
                         %Extra constraint equations for going left
-                        for lll=1:horizon
-                            Aex(lll, lll*n+[1 3])=[m_cons -1]*R_obs;
-                            bex(lll,1)=-c_cons-[m_cons -1]*R_obs*[x_ref(k+lll,1);x_ref(k+lll,3)];
-                        end
+                            Aex(1, horizon*n+[1 3])=[m_cons -1]*R_obs;
+                            bex(1,1)=-c_cons-[m_cons -1]*R_obs*[x_ref(k+horizon,1);x_ref(k+horizon,3)];
+%                         for lll=1:horizon
+%                             Aex(lll, lll*n+[1 3])=[m_cons -1]*R_obs;
+%                             bex(lll,1)=-c_cons-[m_cons -1]*R_obs*[x_ref(k+lll,1);x_ref(k+lll,3)];
+%                         end
                     else
                         %Extra constraint equations for going right
-                        for lll=1:horizon
-                            Aex(lll, lll*n+[1 3])=-[m_cons -1]*R_obs;
-                            bex(lll,1)=c_cons+[m_cons -1]*R_obs*[x_ref(k+lll,1); x_ref(k+lll,3)];
-                        end
+                        Aex(1, horizon*n+[1 3])=-[m_cons -1]*R_obs;
+                        bex(1,1)=c_cons+[m_cons -1]*R_obs*[x_ref(k+horizon,1);x_ref(k+horizon,3)];
+%                         for lll=1:horizon
+%                             Aex(lll, lll*n+[1 3])=-[m_cons -1]*R_obs;
+%                             bex(lll,1)=c_cons+[m_cons -1]*R_obs*[x_ref(k+lll,1); x_ref(k+lll,3)];
+%                         end
                     end
                 Aineq=[Aineq;Aex];
                 bineq=[bineq;bex];
@@ -285,6 +288,18 @@ for k = 1:length(t)-1
     
     x=[x L(2,:)']; %updating states
     e= [e L(2,:)'-x_ref(k,:)'];
+    
+%     if exist('flag_cons')
+%         if (flag_cons==1)
+%             if max(Aex*z-bex)>0
+%             keyboard
+%             end
+%         end
+%     end
+    flag_cons=[];
+    Aex=[];
+    bex=[];
+    
 end
 %% Re-interpolate final input vector and re-calculate trajectory with new input
 u_final=interp1(t,u,t_sim);
@@ -296,3 +311,4 @@ figure;
 plot(t,e)
 legend('e_x','e_u','e_y','e_v','e_{\psi}','e_{r}')
 
+%save('fmincon_obstacle_avoid.mat')

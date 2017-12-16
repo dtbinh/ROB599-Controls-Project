@@ -98,7 +98,7 @@ for k = 1:length(t)-1
     f = zeros(zsize, 1); 
     Ndec=n * (horizon+1) + m *horizon ;
     %Evaluate Al and Bl at current state
-    [Al,Bl]=linearized_mats(x(:,k)',u(k,:));
+    [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
 
     %Discretize (Euler)
     A = eye(size(Al))+dt*Al;

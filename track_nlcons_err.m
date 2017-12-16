@@ -32,8 +32,8 @@ for kk=1:(PredHorizon+1)
     invbr=((yv-yc)-mr*(xv-xc))/(mr*xc+cr-yc);
     invbl=((yv-yc)-ml*(xv-xc))/(ml*xc+cl-yc);
     
-    c(2*kk-1,1)=invbr-1;
-    c(2*kk,1)=invbl-1;
+    c(2*kk-1,1)=invbr-0.95;
+    c(2*kk,1)=invbl-0.95;
     
     dxc_by_xv=(1/(1+mc^2));
     dxc_by_yv=(mc/(1+mc^2));
