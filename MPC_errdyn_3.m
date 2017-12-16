@@ -50,7 +50,7 @@ u_ol = [U1; U2; U3; U4; U5; U6; U7; U8; U9; U10;
      U11;U12;U13;U14;U15;U16;U17;U18;U19;U20;
      U21;U22;U23;U24;U25;U26;U27;U28;U29     ];
 %% Run open loop to get equilibrium trajectory
-x0 = [287 5 -176 0 2 0]';
+x0 = [287 5 -177 0 2 0]';
 
 x_ol = forwardIntegrateControlInput(u_ol,x0);
 % [AFun,BFun]=linearized_mats_traj(x_ref',u_ref');
@@ -59,7 +59,7 @@ t_sim=0:0.01:(size(u_ol,1)-1)*0.01;
 
 %Initialization
 dt = 0.1;
-t=0:dt:200*dt;%117.5;
+t=0:dt:1175*dt;%117.5;
 
 x_ref=interp1(t_sim,x_ol,t);
 u_ref=interp1(t_sim,u_ol,t);
@@ -69,9 +69,10 @@ e = x-x_ref(1,:)';
 u = u_ref(1,:);%[-0.02 5000];
 
 %Normal parameters
+norm_horiz=5;
 n = 6;                    %Number of States
 m = 2;                    %Number of Inputs
-horizon=5;
+horizon=norm_horiz;
 zsize = (horizon+1)*n+horizon*m; 
 xsize = (horizon+1)*n; 
 Q = diag(repmat((ones(1,6)./[100 10 100 10 0.1 0.01]).^2,1,horizon+1));%eye(xsize);%
@@ -83,20 +84,21 @@ Ndec=n * (horizon+1) + m *horizon ;
 %MPC at every time step k
 for k = 1:length(t)-1
     disp(['At ' num2str(t(k)) ' s:'])
-     if ~(length(t)-k>5)
+    if ~(length(t)-k>norm_horiz)
     horizon = length(t)-k; 
-    zsize = (horizon+1)*6+horizon*2; 
-    xsize = (horizon+1)*6; 
+    zsize = (horizon+1)*n+horizon*m; 
+    xsize = (horizon+1)*n; 
 
     Q = 1000*eye(xsize); 
     R = zeros(zsize-xsize); 
-    H = blkdiag(Q, R);
+   
+     end
+ 
+     H = blkdiag(Q, R);
     f = zeros(zsize, 1); 
     Ndec=n * (horizon+1) + m *horizon ;
-    end
- 
     %Evaluate Al and Bl at current state
-    [Al,Bl]=linearized_mats(x(:,k)',u(k,:));
+    [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
 
     %Discretize (Euler)
     A = eye(size(Al))+dt*Al;
