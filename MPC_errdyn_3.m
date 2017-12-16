@@ -156,4 +156,5 @@ plot(x_final(:,1),x_final(:,3),'--k');
 figure;
 plot(t,e)
 legend('e_x','e_u','e_y','e_v','e_{\psi}','e_{r}')
-save('MPC_zero_error_start_euler.mat')
+
+save('MPC_nonzero_error_start_euler.mat')
