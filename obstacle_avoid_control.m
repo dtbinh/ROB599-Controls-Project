@@ -57,7 +57,7 @@ t_sim=0:0.01:(size(u_ol,1)-1)*0.01;
 
 %% Obstacle generation and collision detection
 rng(42)
-nobs=40;%no of obstacles
+nobs=10;%no of obstacles
 Xobs = generateRandomObstacles(nobs,TestTrack);
 
 h1=figure;

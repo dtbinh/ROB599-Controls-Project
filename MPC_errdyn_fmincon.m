@@ -100,7 +100,7 @@ u = u_ref(1,:);%[-0.02 5000];
 
 
 %Normal parameters
-u_lim=[-0.2 0.2;-10000 5000];
+u_lim=[-0.2 0.2;-4000 5000];
 n = 6;                    %Number of States
 m = 2;                    %Number of Inputs
 horizon=5;
@@ -223,7 +223,7 @@ for k = 1:length(t)-1
                 pdist3=perp_dist(obs_x_mat(3,pp),obs_y_mat(3,pp),TestTrack.br);
                 pdistr=min(pdist2,pdist3);
                 %Which side of obstacle is closest to car
-                [mind2,indmin]=min((xvl(1)- obs_x_mat(1:2,pp)).^2+(x(3,k)- obs_y_mat(1:2,pp)).^2);
+                [mind2,indmin]=min((x(1,k)- obs_x_mat(1:2,pp)).^2+(x(3,k)- obs_y_mat(1:2,pp)).^2);
                 
                 if (indmin==1 && pdistl>lim_pdist) %left side is closer and there is space to go on that side
                     goleft=1;

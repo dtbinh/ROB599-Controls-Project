@@ -225,7 +225,7 @@ for k = 1:length(t)-1
                 pdist3=perp_dist(obs_x_mat(3,pp),obs_y_mat(3,pp),TestTrack.br);
                 pdistr=min(pdist2,pdist3);
                 %Which side of obstacle is closest to car
-                [mind2,indmin]=min((xvl(1)- obs_x_mat(1:2,pp)).^2+(x(3,k)- obs_y_mat(1:2,pp)).^2);
+                [mind2,indmin]=min((x(1,k)- obs_x_mat(1:2,pp)).^2+(x(3,k)- obs_y_mat(1:2,pp)).^2);
                 
                 if (indmin==1 && pdistl>lim_pdist) %left side is closer and there is space to go on that side
                     goleft=1;
@@ -332,6 +332,7 @@ for k = 1:length(t)-1
     
     Aineq=[Aineq;Aex2];
     bineq=[bineq;bex2];
+
 %     figure(3)
 %     hold on
 %     plot(R_tr(1,:)*[x(1,k);x(3,k)],R_tr(2,:)*[x(1,k);x(3,k)],'s')
@@ -341,6 +342,17 @@ for k = 1:length(t)-1
 %     plot(xl_tr(1,:),( bex2(1,1))*ones(2,1),'--m')
 %     plot(xr_tr(1,:),-(bex2(horizon+1,1))*ones(2,1),'--m')
 %     keyboard
+    % Inequality constraints to make sure car is moving forward
+    Aex3=zeros(horizon,Ndec);
+    bex3=zeros(horizon,1);
+    for lll=1:horizon
+        Aex3(lll,(lll-1)*n+[1 3])=R_tr(1,:);%x-error for vehicle in track C.S at lll-1=k:k+horizon-1
+        Aex3(lll,lll*n+[1 3])=R_tr(1,:);%x-error for vehicle in track C.S at lll=k:k+horizon
+        bex3(lll,1)=R_tr(1,:)*([x_ref(k+lll,1);x_ref(k+lll,3)]-[x_ref(k+lll-1,1);x_ref(k+lll-1,3)]);%Difference between references in track C.S
+    end
+    
+    Aineq=[Aineq;Aex3];
+    bineq=[bineq;bex3];
     %% Minimize
     %     z0(n*(horizon+1)+[1:m*horizon])=repmat(u(k,:)',1,horizon);
     z = quadprog(H, f, Aineq, bineq, Aeq, beq); 
@@ -371,7 +383,7 @@ for k = 1:length(t)-1
     bex2=[];
 end
 %% Re-interpolate final input vector and re-calculate trajectory with new input
-u_final=interp1(t,u,t_sim);
+u_final=interp1(t,u,t_sim,[],0);
 x_final = forwardIntegrateControlInput(u_final,x(:,1));
 figure(h1);
 plot(x_final(:,1),x_final(:,3),'--k');
