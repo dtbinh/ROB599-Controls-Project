@@ -73,8 +73,8 @@ lim_pdist=1.5;%Limiting distance on side of obstacleto considet going to far sid
 dt = 0.1;
 t=0:dt:20;%floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
 
-x_ref=interp1(t_sim,x_ol,t);%,'previous');
-u_ref=interp1(t_sim,u_ol,t);%,'previous');
+x_ref=interp1(t_sim,x_ol,t,'previous');
+u_ref=interp1(t_sim,u_ol,t,'previous');%);%
 
 figure(h1);
 hold on
@@ -111,13 +111,13 @@ options=optimoptions(@fmincon,'Algorithm','sqp','SpecifyObjectiveGradient',true)
 
 go_left_mat=[];
 exitflag_mat=[];
-recover_norm=1e-4;
+recover_norm=1e-6;
 
 MPC_flag=0;
 k=0;
 pp=[];
 exit_flag=0;
-
+e_nl_mat=[];
 %MPC at every time step k
 while exit_flag==0
     k=k+1;
@@ -157,8 +157,20 @@ while exit_flag==0
             MPC_flag=0;
         end
     end
+         %Evaluate Al and Bl at current state
+        [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
+        sysc=ss(Al,Bl,[],[]);
+        %Discretize (Euler)
+%         A = eye(size(Al))+dt*Al;
+%         B = dt*Bl;
+         sysd=c2d(sysc,dt,'zoh');
+         A=sysd.A;
+        B=sysd.B;
     
     if (MPC_flag==1)
+        
+       
+
         if ~(length(t)-k>horizon)
             horizon = length(t)-k;
         end
@@ -174,15 +186,6 @@ while exit_flag==0
         fun=@(var)error_cost(var,H,f);
         %     nlcons=@(var)track_nlcons_err(var,reshape(x_ref(k:k+horizon,:)',n*(horizon+1),1),TestTrack,Ndec,horizon,n,m);%Nonlinear track constraints
         
-        %Evaluate Al and Bl at current state
-        [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
-%         sysc=ss(Al,Bl,[],[]);
-        %Discretize (Euler)
-        A = eye(size(Al))+dt*Al;
-        B = dt*Bl;
-%          sysd=c2d(sysc,dt,'zoh');
-%          A=sysd.A;
-%         B=sysd.B;
         %% Generate equality constraints
         
         Aeq = zeros(xsize, zsize);          %Allocate Aeq
@@ -212,15 +215,15 @@ while exit_flag==0
         Aineq(1:n * (horizon+1),1:n * (horizon+1))=eye(n * (horizon+1));
         bineq(1:n * (horizon+1),1)=repmat(err_UB',(horizon+1),1);
         Aineq(n * (horizon+1)+[1:m*horizon],n * (horizon+1)+[1:m*horizon])=eye(m*horizon);
-        bineq(n * (horizon+1)+[1:2:m*horizon],1)=u_lim(1,2)-u_ref(k:k+horizon-1,1);
-        bineq(n * (horizon+1)+[2:2:m*horizon],1)=u_lim(2,2)-u_ref(k:k+horizon-1,2);
+        bineq(n * (horizon+1)+[1:2:m*horizon],1)=u_lim(1,2)-u_ref(k:k+horizon-1,1)-u_pid(1);
+        bineq(n * (horizon+1)+[2:2:m*horizon],1)=u_lim(2,2)-u_ref(k:k+horizon-1,2)-u_pid(2);
         
         %Lower Bounds
         Aineq(Ndec+[1:n * (horizon+1)],1:n * (horizon+1))=-eye(n * (horizon+1));
         bineq(Ndec+[1:n * (horizon+1)],1)=repmat(-err_LB',(horizon+1),1);
         Aineq(Ndec+n * (horizon+1)+[1:m*horizon],n * (horizon+1)+[1:m*horizon])=-eye(m*horizon);
-        bineq(Ndec+n * (horizon+1)+[1:2:m*horizon],1)=u_lim(1,2)-u_ref(k:k+horizon-1,1);
-        bineq(Ndec+n * (horizon+1)+[2:2:m*horizon],1)=u_lim(2,2)-u_ref(k:k+horizon-1,2);
+        bineq(Ndec+n * (horizon+1)+[1:2:m*horizon],1)=u_lim(1,2)-u_ref(k:k+horizon-1,1)-u_pid(1);
+        bineq(Ndec+n * (horizon+1)+[2:2:m*horizon],1)=u_lim(2,2)-u_ref(k:k+horizon-1,2)-u_pid(2);
         
         %Inequality constraints for slip angle limits
         Asl = zeros(4*horizon, Ndec);
@@ -427,7 +430,7 @@ while exit_flag==0
 %     x=[x xnew]; %updating states
 %     e= [e xnew-x_ref(k+1,:)'];
         
-    else
+    else %%When states are close to 0 error and openloop can be run
          %Find closest points on track
         [mindist_tr,ind_cl_tr]=sort(((x(1,k)-TestTrack.cline(1,:)).^2+(x(3,k)-TestTrack.cline(2,:)).^2),'ascend');
         ind_tr=[min(ind_cl_tr(1:2)) max(ind_cl_tr(1:2))];
@@ -439,31 +442,59 @@ while exit_flag==0
         R_tr=[cos(th_tr) sin(th_tr);-sin(th_tr) cos(th_tr)];%Rotation matrix to get from world CS to track segment CS
        
         u(k+1,:) = u_ref(k,:)+u_pid; %augmenting with nominal input
-        e= [e zeros(n,1)];
-        x=[x x_ref(k+1,:)']; %updating states
+        
+        if  u(k+1,1)>u_lim(1,2)
+             u(k+1,1)=u_lim(1,2);
+        elseif u(k+1,1)<u_lim(1,1)
+            u(k+1,1)=u_lim(1,1);
+        end
+           
+        if  u(k+1,2)>u_lim(2,2)
+             u(k+1,2)=u_lim(2,2);
+        elseif u(k+1,2)<u_lim(2,1)
+            u(k+1,2)=u_lim(2,1);
+        end
+%         
+        e_new=A*e(:,end)+B*(u(k+1,:)'-u_ref(k+1,:)');
+        e= [e e_new];
+            x=[x x_ref(k+1,:)'+e(:,end)]; %updating states
+%         e= [e zeros(n,1)];
+%         x=[x x_ref(k+1,:)']; %updating states
     end
     %%
     figure(h1)
     hold on
     plot([x(1,k) x(1,k+1)],[x(3,k) x(3,k+1)],'--g')
     
-%     if rem(k,10)==0%Every few steps check error for ode45 drifts and add extra control 
-%         
-%         u_chk=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)));%,[],0);
-%         x_chk = forwardIntegrateControlInput(u_chk,x(:,1));
-% %         x_chk=interp1(t_sim(t_sim<=t(k+1)),x_chk,t(1:k+1));
-%         x_chk =x_chk';
-%         K_p=zeros(2,6);%%PID gains
-%         K_p(1,[1 3 5])=[-0.005*R_tr(2,1) -0.005*R_tr(2,2) -1*0.005];%Steering P gains for local y-error( rows 1 and 2) and psi error (row 3)
-%         int_err(1:2)=int_err(1:2)+R_tr*[x_chk([1 3],end)-x([1 3],end)];%Steering I error for local y-error
-%         int_err(3)=int_err(3)+[x_chk(5,end)-x(5,end)];%Steering I error for psi error 
-%         K_p(1,[1 3])=[-10*R_tr(1,1) -10*R_tr(1,2)]; %Throttle P gains for local y-error( rows 1 and 2) 
-%         u_pid=K_p*[x_chk(:,end)-x(:,end)]-0.001*int_err(2)-0.0005*int_err(3);
-%         u_pid=u_pid';
-%         figure(h1);
-%         plot(x_chk(1,end),x_chk(3,end),'pr');
-%         plot(x_chk(1,:),x_chk(3,:),'pr');
-%     end
+    if rem(k,10)==0%Every few steps check error for ode45 drifts and add extra control 
+        
+        u_chk=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)),'previous');%,[],0);
+        x_chk = forwardIntegrateControlInput(u_chk,x(:,1));
+%         x_chk=interp1(t_sim(t_sim<=t(k+1)),x_chk,t(1:k+1));
+        x_chk =x_chk';
+        K_p=zeros(2,6);%%PID gains
+        K_p(1,[1 3 5])=[-0.005*R_tr(2,1) -0.005*R_tr(2,2) -1*0.005];%Steering P gains for local y-error( rows 1 and 2) and psi error (row 3)
+        int_err(1:2)=int_err(1:2)+R_tr*[x_chk([1 3],end)-x([1 3],end)];%Steering I error for local y-error
+        int_err(3)=int_err(3)+[x_chk(5,end)-x(5,end)];%Steering I error for psi error 
+        K_p(1,[1 3])=[-0.1*R_tr(1,1) -0.1*R_tr(1,2)]; %Throttle P gains for local y-error( rows 1 and 2) 
+        u_pid=K_p*[x_chk(:,end)-x(:,end)]+[-0.001*int_err(2)-0.0005*int_err(3);-0.01*int_err(1)];
+        u_pid=u_pid';
+        e_nl_mat=[e_nl_mat x_chk(:,end)-x(:,end)];
+          if  u_pid(1)>0.1
+             u_pid(1)=0.1;
+        elseif u_pid(1)<-0.1
+            u_pid(1)=-0.1;
+          end
+           
+         if  u_pid(2)>2000
+             u_pid(2)=2000;
+        elseif u_pid(2)<-2000
+            u_pid(2)=-2000;
+        end
+       figure(h1);
+        plot(x_chk(1,end),x_chk(3,end),'pr');
+        plot(x_chk(1,:),x_chk(3,:),'pr');
+    end
     
     %     if exist('flag_cons')
     %         if (flag_cons==1)
