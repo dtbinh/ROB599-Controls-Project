@@ -1,6 +1,7 @@
 clear all
 close all
 clc
+%%
 ticid=tic;
 %%
 load('TestTrack.mat')
@@ -15,6 +16,10 @@ cline_x = TestTrack.cline(1,:);
 cline_y = TestTrack.cline(2,:);
 
 theta = TestTrack.theta(1,:);
+%% Obstacle generation 
+rng(42)
+nobs=10;%no of obstacles
+Xobs = generateRandomObstacles(nobs,TestTrack);
 %% Reference input
 % load('Control_Nom.mat')
 % load('Trajectory_Nom.mat')
@@ -22,18 +27,15 @@ theta = TestTrack.theta(1,:);
 % x_ol=Y;
 % clear Control_Nom Y
 % load('traj_cline_slow.mat')
-load('traj_cline_slow.mat')
+load('traj_cline_fast.mat')
 
 %% Run open loop to get equilibrium trajectory
 % x0 = [287 5 -176 0 2 0]';
 % x_ol = forwardIntegrateControlInput(u_ol,x0);
 t_sim=0:0.01:(size(u_ol,1)-1)*0.01;
 
-%% Obstacle generation and collision detection
-rng(42)
-nobs=10;%no of obstacles
-Xobs = generateRandomObstacles(nobs,TestTrack);
-%%
+
+%% Collision detection
 h1=figure;
 hold on
 plot(bl_x,bl_y,br_x,br_y,'b');%cline_x,cline_y,'--',
@@ -65,16 +67,14 @@ for pp=1:nobs
     
     
 end
-%%
-
-%Initialization
-detect_dist=5;%Detection distance of obstacle in m
+%% Initialization
+detect_dist=10;%Detection distance of obstacle in m
 lim_pdist=1.5;%Limiting distance on side of obstacleto considet going to far side
 dt = 0.1;
-t=0:dt:floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
+t=0:dt:500;%floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
 
-x_ref=interp1(t_sim,x_ol,t,'previous');
-u_ref=interp1(t_sim,u_ol,t,'previous');
+x_ref=interp1(t_sim,x_ol,t);%,'previous');
+u_ref=interp1(t_sim,u_ol,t);%,'previous');
 
 figure(h1);
 hold on
@@ -84,12 +84,15 @@ x = x_ref(1,:)';% [289 5 -175 0 2 0]';%[287 5 -176 0 2 0]';
 e = x-x_ref(1,:)';
 u = u_ref(1,:);%[-0.02 5000];
 
-
+%PID
+u_pid=[0 0];%Initial pid inputs
+K_p=zeros(2,6);%Initial pid inputs
 %Normal parameters
-err_UB=[200 20 200 20 1 1];%Error upper bounds
+err_UB=[100 20 100 20 1 1];%Error upper bounds
 err_LB=-err_UB;%Error lower bounds
 u_lim=[-0.2 0.2;-1000 5000];%Total input bounds
 obs_pad=1;%Obstacle padding in m
+tracklim_pad=3;%Track limit padding in m
 t_comp_mins=15;%No. of simulation minutes allowed for competition
 
 n = 6;                    %Number of States
@@ -117,8 +120,8 @@ exit_flag=0;
 %MPC at every time step k
 while exit_flag==0
     k=k+1;
-    ((norm(x(:,k)-x_ref(k,:)')/norm(x_ref(k,:)'))<recover_norm)
-    MPC_flag
+%     ((norm(x(:,k)-x_ref(k,:)')/norm(x_ref(k,:)'))<recover_norm)
+%     MPC_flag
     if ((k==(length(t)-1)) || toc(ticid)>=0.95*t_comp_mins*60) %
         exit_flag=1;
     end
@@ -172,13 +175,13 @@ while exit_flag==0
         
         %Evaluate Al and Bl at current state
         [Al,Bl]=linearized_mats(x_ref(k,:),u_ref(k,:));
-        sysc=ss(Al,Bl,[],[]);
+%         sysc=ss(Al,Bl,[],[]);
         %Discretize (Euler)
-%         A = eye(size(Al))+dt*Al;
-%         B = dt*Bl;
-         sysd=c2d(sysc,dt,'zoh');
-         A=sysd.A;
-        B=sysd.B;
+        A = eye(size(Al))+dt*Al;
+        B = dt*Bl;
+%          sysd=c2d(sysc,dt,'zoh');
+%          A=sysd.A;
+%         B=sysd.B;
         %% Generate equality constraints
         
         Aeq = zeros(xsize, zsize);          %Allocate Aeq
@@ -372,8 +375,8 @@ while exit_flag==0
         for lll=1:horizon
             Aex2(lll,lll*n+[1 3])=R_tr(2,:);%y-error for vehicle in track C.S
             Aex2(horizon+lll,lll*n+[1 3])=-R_tr(2,:);%negative y-error for vehicle in track C.S
-            bex2(lll,1)=min(xl_tr(2,:))-0.1-R_tr(2,:)*[x_ref(k+lll,1);x_ref(k+lll,3)];%closest point of track on left side in in track C.S
-            bex2(horizon+lll,1)=-(max(xr_tr(2,:))+0.1)+R_tr(2,:)*[x_ref(k+lll,1);x_ref(k+lll,3)];%closest point of track on right side in in track C.S
+            bex2(lll,1)=min(xl_tr(2,:))-tracklim_pad-R_tr(2,:)*[x_ref(k+lll,1);x_ref(k+lll,3)];%closest point of track on left side in in track C.S
+            bex2(horizon+lll,1)=-(max(xr_tr(2,:))+tracklim_pad)+R_tr(2,:)*[x_ref(k+lll,1);x_ref(k+lll,3)];%closest point of track on right side in in track C.S
         end
         
         Aineq=[Aineq;Aex2];
@@ -413,17 +416,28 @@ while exit_flag==0
         exitflag_mat=[exitflag_mat exitflag];
         u_k = z([xsize+1 xsize+2],1);
         
-        u(k+1,:) = u_k'+u_ref(k,:); %augmenting with nominal input
+        u(k+1,:) = u_k'+u_ref(k,:)+u_pid; %augmenting with nominal input
             e= [e z([n+1:2*n],1)];
             x=[x x_ref(k+1,:)'+z([n+1:2*n],1)]; %updating states
     %     Simulating using the total input
 %     [L]=forwardIntegrate_vardt([u(k:k+1,:)],x(:,k)',dt);
-%     
-%     x=[x L(2,:)']; %updating states
-%     e= [e L(2,:)'-x_ref(k+1,:)'];
+%     df = state_transition_euler(x(:,k),u(k,:));
+%     xnew=x(:,k)+dt*df;
+%     x=[x xnew]; %updating states
+%     e= [e xnew-x_ref(k+1,:)'];
         
     else
-        u(k+1,:) = u_ref(k,:); %augmenting with nominal input
+         %Find closest points on track
+        [mindist_tr,ind_cl_tr]=sort(((x(1,k)-TestTrack.cline(1,:)).^2+(x(3,k)-TestTrack.cline(2,:)).^2),'ascend');
+        ind_tr=[min(ind_cl_tr(1:2)) max(ind_cl_tr(1:2))];
+        %Locations of closest centerline points
+        xc1=TestTrack.cline(1,ind_tr(1)); yc1=TestTrack.cline(2,ind_tr(1));
+        xc2=TestTrack.cline(1,ind_tr(2)); yc2=TestTrack.cline(2,ind_tr(2));
+        
+        th_tr=atan2((yc2-yc1),(xc2-xc1));%Slope of centerline segment
+        R_tr=[cos(th_tr) sin(th_tr);-sin(th_tr) cos(th_tr)];%Rotation matrix to get from world CS to track segment CS
+       
+        u(k+1,:) = u_ref(k,:)+u_pid; %augmenting with nominal input
         e= [e zeros(n,1)];
         x=[x x_ref(k+1,:)']; %updating states
     end
@@ -431,6 +445,23 @@ while exit_flag==0
     figure(h1)
     hold on
     plot([x(1,k) x(1,k+1)],[x(3,k) x(3,k+1)],'--g')
+    
+    if rem(k,10)==0%Every few steps check error for ode45 drifts and add extra control 
+        
+        u_chk=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)),[],0);
+        x_chk = forwardIntegrateControlInput(u_chk,x(:,1));
+        x_chk =x_chk';
+        K_p=zeros(2,6);
+        K_p(1,[1 3 5])=[-0.05*R_tr(2,1) -0.05*R_tr(2,2) -1*0.01];
+        int_err(1:2)=cumsum(R_tr*(x_chk([1 3],end)-x([1 3],end)));
+        int_err(3)=cumsum(x_chk(5,end)-x(5,end));
+%         K_p(1,[1 3])=[-100*R_tr(1,1) -100*R_tr(1,2)]; 
+        u_pid=K_p*[x_chk(:,end)-x(:,end)]-0.001*int_err(2)-0.001*int_err(3);
+        u_pid=u_pid';
+        figure(h1);
+        plot(x_chk(1,end),x_chk(3,end),'pr');
+        plot(x_chk(1,:),x_chk(3,:),'pr');
+    end
     
     %     if exist('flag_cons')
     %         if (flag_cons==1)
@@ -450,7 +481,7 @@ figure;
 plot(t(1:k+1),e(:,1:k+1))
 legend('e_x','e_u','e_y','e_v','e_{\psi}','e_{r}')
 %% Re-interpolate final input vector
-u_final=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)),'previous',0);
+u_final=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)),[],0);
 u_final=[u_final;u_ol(t_sim>t(k+1),:)];
 calc_time=toc(ticid)
 figure;
