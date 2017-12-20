@@ -71,7 +71,7 @@ end
 detect_dist=10;%Detection distance of obstacle in m
 lim_pdist=1.5;%Limiting distance on side of obstacleto considet going to far side
 dt = 0.1;
-t=0:dt:200;%floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
+t=0:dt:20;%floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
 
 x_ref=interp1(t_sim,x_ol,t);%,'previous');
 u_ref=interp1(t_sim,u_ol,t);%,'previous');
@@ -446,7 +446,7 @@ while exit_flag==0
     hold on
     plot([x(1,k) x(1,k+1)],[x(3,k) x(3,k+1)],'--g')
     
-    if rem(k,10)==0%Every few steps check error for ode45 drifts and add extra control 
+    if rem(k,5)==0%Every few steps check error for ode45 drifts and add extra control 
         
         u_chk=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)),[],0);
         x_chk = forwardIntegrateControlInput(u_chk,x(:,1));
