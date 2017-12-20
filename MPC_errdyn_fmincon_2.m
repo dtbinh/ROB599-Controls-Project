@@ -71,7 +71,7 @@ end
 detect_dist=10;%Detection distance of obstacle in m
 lim_pdist=1.5;%Limiting distance on side of obstacleto considet going to far side
 dt = 0.1;
-t=0:dt:500;%floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
+t=0:dt:200;%floor(t_sim(end)/dt)*dt;%500*dt;%117.5;
 
 x_ref=interp1(t_sim,x_ol,t);%,'previous');
 u_ref=interp1(t_sim,u_ol,t);%,'previous');
@@ -451,11 +451,11 @@ while exit_flag==0
         u_chk=interp1(t(1:k+1),u(1:k+1,:),t_sim(t_sim<=t(k+1)),[],0);
         x_chk = forwardIntegrateControlInput(u_chk,x(:,1));
         x_chk =x_chk';
-        K_p=zeros(2,6);
-        K_p(1,[1 3 5])=[-0.05*R_tr(2,1) -0.05*R_tr(2,2) -1*0.01];
-        int_err(1:2)=cumsum(R_tr*(x_chk([1 3],end)-x([1 3],end)));
-        int_err(3)=cumsum(x_chk(5,end)-x(5,end));
-%         K_p(1,[1 3])=[-100*R_tr(1,1) -100*R_tr(1,2)]; 
+        K_p=zeros(2,6);%%PID gains
+        K_p(1,[1 3 5])=[-0.05*R_tr(2,1) -0.05*R_tr(2,2) -1*0.01];%Steering P gains for local y-error( rows 1 and 2) and psi error (row 3)
+        int_err(1:2)=cumsum(R_tr*(x_chk([1 3],end)-x([1 3],end)));%Steering I error for local y-error
+        int_err(3)=cumsum(x_chk(5,end)-x(5,end));%Steering I error for psi error 
+%         K_p(1,[1 3])=[-100*R_tr(1,1) -100*R_tr(1,2)]; %Throttle P gains for local y-error( rows 1 and 2) 
         u_pid=K_p*[x_chk(:,end)-x(:,end)]-0.001*int_err(2)-0.001*int_err(3);
         u_pid=u_pid';
         figure(h1);
@@ -494,9 +494,9 @@ plot(u_ol(:,2));plot(u_final(:,2),'--r')
 
 
 %% Re-calculate trajectory with new input
-ticid_sim=tic;
-x_final = forwardIntegrateControlInput(u_final,x(:,1));
-figure(h1);
-plot(x_final(:,1),x_final(:,3),'--k');
-sim_time=toc(ticid_sim)
+% ticid_sim=tic;
+% x_final = forwardIntegrateControlInput(u_final,x(:,1));
+% figure(h1);
+% plot(x_final(:,1),x_final(:,3),'--k');
+% sim_time=toc(ticid_sim)
 % save('quadpog_obstacle_avoid_40s.mat')
